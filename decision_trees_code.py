@@ -6,14 +6,17 @@ Created on Mon May 12 10:41:29 2025
 """
 
 import numpy as np
-
+import copy
+import time
 
 class DecisionTreeRegressor:
     
     def __init__(self):
         
         self.tree = None
-
+        self.terminal_nodes = 0
+        self.profondeur_liste = []
+        
     def mse(self, y):
         
         return np.var(y) * len(y)
@@ -178,16 +181,16 @@ class DecisionTreeRegressor:
                 j1 = 0
 
 
-        return arbre,profondeur_liste_regions
+        return arbre,k,profondeur_liste_regions
              
-        #code à compléter qui renvoie l'arbre de décision
+        #code qui renvoie l'arbre de décision
                 
 
     def fit(self, X_train, y_train,observations =5):
         
-        self.tree,_ = self.build_tree(np.array(X_train), np.array(y_train),observations)
+        self.tree, self.terminal_nodes, self.profondeur_liste = self.build_tree(np.array(X_train), np.array(y_train),observations)
 
-#fonction de prédiction des prix sur le set de test à écrire
+#fonction de prédiction des prix sur le set de test
 
     def predict_sample(self, x, tree):
         
@@ -209,8 +212,171 @@ class DecisionTreeRegressor:
         
         return np.array([self.predict_sample(x, self.tree) for x in X_train])
     
-    def pruning(self,tree,alpha):
-        pass
+    def pruning(self,tree,X_train,y_train,alpha,profondeur=0): 
+            
+        def fusionner_branches(arbre,y):
+            
+            if not isinstance(arbre["left"],dict) and not isinstance(arbre["right"],dict):
+                y -=1
+                return np.concatenate([arbre["left"], arbre["right"]]),y
+            
+            elif isinstance(arbre["left"],dict) and not isinstance(arbre["right"],dict):
+                arleft,y = fusionner_branches(arbre["left"],y)
+                y -=1
+                return np.concatenate([arleft, arbre["right"]]),y
+            
+            elif not isinstance(arbre["left"],dict) and isinstance(arbre["right"],dict):
+                y -=1
+                arright,y = fusionner_branches(arbre["right"],y)
+                return np.concatenate([arbre["left"], arright]),y
+            
+            else :
+                arleft,y = fusionner_branches(arbre["left"],y)
+                arright,y = fusionner_branches(arbre["right"],y)
+                y-=1
+                return np.concatenate([arleft, arright]),y
+        
+        def descente_et_fusion(arbre,x,k,y):
+ 
+            if k == x:
+
+                return arbre, x, y
+            
+            else:
+                
+                if not isinstance(arbre["left"],dict) and not isinstance(arbre["right"],dict):
+                    if k == x:
+                        return arbre,x,y
+                    k+=1
+                    if k == x:
+                       
+                        arbre,y = fusionner_branches(arbre,y)
+                        
+                        return arbre,x,y
+                    k+=1
+                    if k == x:
+                       
+                        arbre,y = fusionner_branches(arbre,y)
+                        
+                        return arbre,x,y
+                    else :
+                        
+                        return arbre,k,y
+                elif not isinstance(arbre["left"],dict) and isinstance(arbre["right"],dict):
+                    if k == x:
+                        
+                        return arbre,x, y 
+                    k += 1 
+                    if k == x:
+                        
+                        arbre,y = fusionner_branches(arbre,y)
+                        
+                        return arbre, x,y
+                    
+                    arbre2,k,z = descente_et_fusion(arbre["right"],x,k,y)
+                   
+                    if k == x:
+                        arbre["right"]=arbre2
+                        
+                        return arbre,x,z
+                    else:
+                        return arbre,k,y
+                elif isinstance(arbre["left"],dict) and not isinstance(arbre["right"],dict):
+                    
+                    if k == x:
+                       
+                        return arbre,x
+                    
+                    arbre2,k,z = descente_et_fusion(arbre["left"],x,k,y)
+                    
+                    if k == x:
+                        arbre["left"]=arbre2
+                        
+                        return arbre,x,z
+                    else:
+                        k += 1 
+                        if k == x:
+                            arbre,y = fusionner_branches(arbre,y)
+                            return arbre,x,y
+                        else:
+                            return arbre,k,y
+                            
+                        
+                elif isinstance(arbre["left"],dict) and isinstance(arbre["right"],dict):
+                    
+                    if k == x:
+                        return arbre,x,y
+                    arbre2,k,z = descente_et_fusion(arbre["left"],x,k,y)
+                    if k == x:
+                        arbre["left"] = arbre2
+                        return arbre,x,z
+                    else:
+                        arbre3,k,z = descente_et_fusion(arbre["right"],x,k,y)
+                        if k == x:
+                            arbre["right"] = arbre3
+                            return arbre,x,z
+                        else:
+                            return arbre,k,y
+                        
+                        
+        
+            
+
+        
+        self.tree = tree
+        erreur = self.metric_error_for_pruning(y_train, self.predict(X_train), alpha)
+        k = -1
+        if self.terminal_nodes <= 2:
+            print(0.1)
+            return self.tree,self.terminal_nodes
+        
+        else:
+            ddd = DecisionTreeRegressor()
+            tree = copy.deepcopy(self.tree)
+            terminal_nodes = copy.deepcopy(self.terminal_nodes)
+            qqq = 0
+            for x in np.random.permutation(terminal_nodes):
+                
+                ddd.tree = copy.deepcopy(tree)
+                _,_,ddd.terminal_nodes = descente_et_fusion(ddd.tree,x,k,terminal_nodes)
+                y_predict_train = ddd.predict(X_train)
+                if erreur > ddd.metric_error_for_pruning(y_train, y_predict_train, alpha):
+                    self.terminal_nodes = ddd.terminal_nodes
+                    self.tree, self.terminal_nodes = self.pruning(ddd.tree,X_train,y_train,alpha,profondeur)
+                    
+                    erreur = self.metric_error_for_pruning(y_train, self.predict(X_train), alpha)
+                
+                elif erreur > ddd.mean_square_error(y_train, y_predict_train) and profondeur==0:
+                    yyyy = np.random.randint(0,ddd.terminal_nodes)
+                    ddd.tree,_, ddd.terminal_nodes = descente_et_fusion(ddd.tree,yyyy,k,ddd.terminal_nodes)
+                    erreur2 = ddd.metric_error_for_pruning(y_train, ddd.predict(X_train), alpha)
+                    if erreur > erreur2:
+                        print("a")
+                        self.tree, self.terminal_nodes = ddd.pruning(ddd.tree,X_train,y_train,alpha,profondeur+1)
+                        
+                        erreur = self.metric_error_for_pruning(y_train, self.predict(X_train), alpha)
+                    else:
+                        continue 
+               
+                else:
+                    continue
+
+            return self.tree,self.terminal_nodes
+
+                        
+                        
+            
+                        
+                        
+                
+
+                        
+                    
+                    
+                    
+
+            
+            
 
     def mean_square_error(self,y_test, y_predict_test):  
         somme = 0
@@ -219,7 +385,10 @@ class DecisionTreeRegressor:
         return somme/len(y_test)
     
     def metric_error_for_pruning(self,y_test, y_predict_test,alpha):
-        pass
+        
+        erreur1 = self.mean_square_error(y_test, y_predict_test)
+        erreur2 = self.terminal_nodes
+        return erreur1 + alpha*erreur2
 """# Données jouet
 X = np.array([[1], [2], [3], [4], [5], [6]])
 y = np.array([1, 1.5, 2, 2.5, 3, 3.5])
@@ -285,8 +454,25 @@ mse_train = np.sqrt(dd.mean_square_error(y_train, y_train_predict))
 mse_test = np.sqrt(dd.mean_square_error(y_test, y_predict))
 
 
-print(mse_train)
-print(mse_test)
-print(t2-t1)
+#print(mse_train)
+#print(mse_test)
+#print(t2-t1)
 
+#essai4
+mon_dictionnaire = {'feature_index': 1, 'threshold': 1000.0651197080786, 'left': {'feature_index': 0, 'threshold': 999.67125607388, 'left': {'feature_index': 1, 'threshold': 999.04709011227, 'left': np.array([338.0902386 , 381.07367881, 343.73541799, 375.62302356,
+       320.22783441]), 'right': np.array([458.52789767, 454.32901321, 437.90401436, 417.54122635,
+       444.67970846])}, 'right': {'feature_index': 1, 'threshold': 999.7117705391285, 'left': {'feature_index': 1, 'threshold': 998.8885109601988, 'left': np.array([453.9716661 , 451.79140134, 446.21230389]), 'right': {'feature_index': 0, 'threshold': 1000.4595490022132, 'left': np.array([475.37241721, 481.20614899, 484.229812  , 466.49020065]), 'right': np.array([498.6284209 , 508.19978205, 512.04904895])}}, 'right': np.array([531.48237221, 510.88504979, 531.66193891, 559.96108847])}}, 'right': {'feature_index': 1, 'threshold': 1000.7544434659072, 'left': {'feature_index': 0, 'threshold': 999.2524657510324, 'left': np.array([491.03773416, 501.09520221, 521.61588724, 470.9635849 ]), 'right': {'feature_index': 0, 'threshold': 1001.029236892782, 'left': {'feature_index': 1, 'threshold': 1000.4104056820228, 'left': np.array([529.71971585, 547.71292837, 559.04378534, 522.35358676]), 'right': np.array([547.12901446, 558.87741587, 551.56006043])}, 'right': {'feature_index': 1, 'threshold': 1000.177815166058, 'left': np.array([576.8926402 , 563.58363749, 562.62597526]), 'right': np.array([601.76780838, 587.10134867, 608.64466352, 594.68664574])}}}, 'right': {'feature_index': 0, 'threshold': 999.1020792472432, 'left': np.array([576.85255167, 558.16409431]), 'right': {'feature_index': 1, 'threshold': 1000.9267078456826, 'left': np.array([604.7965235]), 'right': np.array([665.04739236, 666.44170815, 637.30962074, 643.13593178,
+       657.71868008])}}}}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+dd = DecisionTreeRegressor()
+dd.fit(X_train,y_train,10) 
 
+print(dd.terminal_nodes)
+print(dd.mean_square_error(y_train, dd.predict(X_train)))
+print(dd.metric_error_for_pruning(y_train, dd.predict(X_train), 0.5)) 
+X = dd.pruning(dd.tree,X_train,y_train,0.5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+arbre, terminal_nodes = X  
+dd.tree =arbre
+print(dd.metric_error_for_pruning(y_train, dd.predict(X_train), 0.5))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+print(terminal_nodes)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
