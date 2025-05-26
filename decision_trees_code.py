@@ -430,7 +430,7 @@ print(dd.build_tree_step_two(X, y,5))"""
 #essai3
 
 import pandas as pd 
-df = pd.read_csv("C:/Users/theob/Downloads/fake_reg.csv")
+df = pd.read_csv("fake_reg.csv")
 df = df_shuffled = df.iloc[np.random.permutation(len(df))]
 X = df[['feature1','feature2']].values
 #,'feature2'
